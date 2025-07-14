@@ -54,18 +54,23 @@ jobs:
     - name: Run DIY part 1 (before defconfig)
       if: ${{ env.DIY_P1_SH != '' }}
       run: |
-        chmod +x "${{ env.DIY_P1_SH }}"
-        ./"${{ env.DIY_P1_SH }}"
-
-    - name: Run make defconfig
-      run: make defconfig
+        if [ -f "${{ env.DIY_P1_SH }}" ]; then
+          chmod +x "${{ env.DIY_P1_SH }}"
+          ./"${{ env.DIY_P1_SH }}"
+        else
+          echo "${{ env.DIY_P1_SH }} not found, skipping"
+        fi
 
     - name: Run DIY part 2 (after defconfig)
       if: ${{ env.DIY_P2_SH != '' }}
       run: |
-        chmod +x "${{ env.DIY_P2_SH }}"
-        ./"${{ env.DIY_P2_SH }}"
-
+        if [ -f "${{ env.DIY_P2_SH }}" ]; then
+          chmod +x "${{ env.DIY_P2_SH }}"
+          ./"${{ env.DIY_P2_SH }}"
+        else
+          echo "${{ env.DIY_P2_SH }} not found, skipping"
+        fi
+        
     - name: Compile firmware
       run: |
         make -j$(nproc) V=s || make -j1 V=s
