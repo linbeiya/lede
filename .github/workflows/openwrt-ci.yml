@@ -1,9 +1,9 @@
-name: Build lede Firmware for H68K with Debug
+name: Build lede Firmware for H68K
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:    # 手动触发
   schedule:
-    - cron: '0 16 * * *'   # 每天北京时间 0 点触发
+    - cron: '0 16 * * *'   # 每天北京时间0点（UTC16点）自动触发
 
 env:
   REPO_URL: https://github.com/linbeiya/lede.git
@@ -24,6 +24,9 @@ jobs:
     steps:
     - name: Checkout source
       uses: actions/checkout@v4
+      with:
+        repository: linbeiya/lede
+        ref: ${{ env.REPO_BRANCH }}
 
     - name: Setup build environment
       run: |
@@ -32,42 +35,36 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         sudo apt-get clean
 
-    - name: Check root directory files
+    - name: Update & install feeds
       run: |
-        echo "根目录文件列表："
-        ls -alh
-
-    - name: Check .config existence and content
-      run: |
-        if [ -f "${{ env.CONFIG_FILE }}" ]; then
-          echo ".config 文件存在，显示前20行："
-          head -20 "${{ env.CONFIG_FILE }}"
-        else
-          echo "Error: .config 文件不存在！"
-          exit 1
-        fi
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
     - name: Apply .config
       run: |
-        cp "${{ env.CONFIG_FILE }}" .config
-        echo "已复制 .config，显示复制后文件前20行："
+        if [ ! -f .config ]; then
+          cp "${{ env.CONFIG_FILE }}" .config
+          echo "复制了 .config 文件"
+        else
+          echo ".config 文件已存在，跳过复制"
+        fi
+        echo "当前 .config 文件前20行内容："
         head -20 .config
 
-    # 暂时注释 DIY 脚本，避免影响测试
-    # - name: Run DIY part 1 (before defconfig)
-    #   if: ${{ env.DIY_P1_SH != '' }}
-    #   run: |
-    #     chmod +x "${{ env.DIY_P1_SH }}"
-    #     ./"${{ env.DIY_P1_SH }}"
+    - name: Run DIY part 1 (before defconfig)
+      if: ${{ env.DIY_P1_SH != '' }}
+      run: |
+        chmod +x "${{ env.DIY_P1_SH }}"
+        ./"${{ env.DIY_P1_SH }}"
 
     - name: Run make defconfig
       run: make defconfig
 
-    # - name: Run DIY part 2 (after defconfig)
-    #   if: ${{ env.DIY_P2_SH != '' }}
-    #   run: |
-    #     chmod +x "${{ env.DIY_P2_SH }}"
-    #     ./"${{ env.DIY_P2_SH }}"
+    - name: Run DIY part 2 (after defconfig)
+      if: ${{ env.DIY_P2_SH != '' }}
+      run: |
+        chmod +x "${{ env.DIY_P2_SH }}"
+        ./"${{ env.DIY_P2_SH }}"
 
     - name: Compile firmware
       run: |
