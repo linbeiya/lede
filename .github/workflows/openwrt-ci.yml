@@ -31,7 +31,13 @@ jobs:
     - name: Setup build environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libncurses5-dev zlib1g-dev gawk git gettext libssl-dev xsltproc wget unzip python3 python3-distutils
+        sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+        bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
+        genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
+        libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev \
+        libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf \
+        python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion \
+        swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
         sudo timedatectl set-timezone "$TZ"
         sudo apt-get clean
 
@@ -50,6 +56,8 @@ jobs:
         fi
         echo "当前 .config 文件前20行内容："
         head -20 .config
+        echo "验证目标平台配置："
+        grep "CONFIG_TARGET_" .config | head -5
 
     - name: Run DIY part 1 (before defconfig)
       if: ${{ env.DIY_P1_SH != '' }}
@@ -71,9 +79,30 @@ jobs:
           echo "${{ env.DIY_P2_SH }} not found, skipping"
         fi
         
+    - name: Download dependencies
+      run: |
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+
     - name: Compile firmware
       run: |
+        echo "开始编译 H68K 固件..."
+        echo "编译开始时间: $(date)"
         make -j$(nproc) V=s || make -j1 V=s
+        echo "编译结束时间: $(date)"
+
+    - name: Check compile result
+      run: |
+        echo "检查编译结果..."
+        ls -la bin/targets/*/
+        if [ -d "bin/targets/armsr/armv8" ]; then
+          echo "H68K 固件编译成功！"
+          ls -la bin/targets/armsr/armv8/
+        else
+          echo "编译失败，检查目录结构："
+          find bin/targets/ -name "*.img*" -o -name "*.bin" -o -name "*.gz" | head -10
+        fi
 
     - name: Upload bin directory
       if: env.UPLOAD_BIN_DIR == 'true'
