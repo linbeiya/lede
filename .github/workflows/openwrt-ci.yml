@@ -1,15 +1,15 @@
 name: Build lede Firmware
 
 on:
-  workflow_dispatch:    # 手动触发
+  workflow_dispatch:
   schedule:
-    - cron: '0 16 * * *'   # 每天北京时间凌晨0点触发编译（16点UTC）
+    - cron: '0 16 * * *'
 
 env:
   REPO_URL: https://github.com/linbeiya/lede.git
-  REPO_BRANCH: master          
-  CONFIG_FILE: .config         
-  DIY_P1_SH: diy-part1.sh      
+  REPO_BRANCH: master
+  CONFIG_FILE: .config
+  DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   TZ: Asia/Shanghai
   UPLOAD_BIN_DIR: true
@@ -23,54 +23,74 @@ jobs:
     strategy:
       matrix:
         ARCHITECTURE:
-          - x86
-          - rk33xx
-          - rk35xx
+          - h68k  # 改为适配 armvirt 架构
+          # 也可用 armvirt
 
     steps:
-    - name: Checkout lede repository
+    - name: Checkout current repository
       uses: actions/checkout@v3
-      with:
-        repository: linbeiya/lede
-        ref: ${{ env.REPO_BRANCH }}
 
-    - name: Setup build environment and install dependencies
+    - name: Setup build environment
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential libncurses5-dev zlib1g-dev gawk git gettext libssl-dev xsltproc wget unzip python3 python3-distutils
         sudo timedatectl set-timezone "$TZ"
         sudo apt-get clean
 
-    - name: Load custom feeds config (if exists)
+    - name: Apply diy-part1.sh (feeds modification)
+      if: ${{ env.DIY_P1_SH != '' }}
       run: |
-        if [ -f "feeds.conf" ]; then
-          echo "Using custom feeds.conf"
-        else
-          echo "Using default feeds.conf"
-        fi
+        chmod +x ${{ env.DIY_P1_SH }}
+        ./${{ env.DIY_P1_SH }}
 
     - name: Update and install feeds
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Copy config file
+    - name: Apply diy-part2.sh (custom changes)
+      if: ${{ env.DIY_P2_SH != '' }}
       run: |
-        if [ -f "${{ matrix.ARCHITECTURE }}/$CONFIG_FILE" ]; then
-          cp "${{ matrix.ARCHITECTURE }}/$CONFIG_FILE" .config
-        else
-          echo "配置文件不存在，使用默认config"
-        fi
+        chmod +x ${{ env.DIY_P2_SH }}
+        ./${{ env.DIY_P2_SH }}
 
-    - name: Build firmware
+    - name: Load .config from root
       run: |
-        make -j$(nproc) V=s || make -j1 V=s
+        [ -f .config ] && echo "Using root .config"
 
-    - name: Upload firmware artifacts
+    - name: Run make defconfig
+      run: |
+        make defconfig
+
+    - name: Compile firmware
+      run: |
+        make -j$(nproc) || make -j1 V=s
+
+    - name: Upload bin folder (all)
+      if: env.UPLOAD_BIN_DIR == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: lede-bin-${{ matrix.ARCHITECTURE }}
+        path: bin
+
+    - name: Upload firmware only
+      if: env.UPLOAD_FIRMWARE == 'true'
       uses: actions/upload-artifact@v3
       with:
         name: firmware-${{ matrix.ARCHITECTURE }}
-        path: bin/
+        path: bin/targets/*/*
+
+    - name: Release firmware
+      if: env.UPLOAD_RELEASE == 'true'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: firmware-${{ matrix.ARCHITECTURE }}-$(date +'%Y%m%d-%H%M')
+        name: H68K lede firmware
+        body: |
+          ✅ 自动编译完成
+          📅 日期: $(date +'%Y-%m-%d %H:%M')
+          💻 架构: ${{ matrix.ARCHITECTURE }}
+        files: bin/targets/*/*
 
     - name: Cleanup old workflow runs
       uses: GitRML/delete-workflow-runs@main
