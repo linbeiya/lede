@@ -1,9 +1,9 @@
-name: Build lede Firmware
+name: Build lede Firmware for H68K
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:    # 手动触发
   schedule:
-    - cron: '0 16 * * *'
+    - cron: '0 16 * * *'   # 每天北京时间 0 点触发
 
 env:
   REPO_URL: https://github.com/linbeiya/lede.git
@@ -20,15 +20,10 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        ARCHITECTURE:
-          - h68k  # 改为适配 armvirt 架构
-          # 也可用 armvirt
 
     steps:
-    - name: Checkout current repository
-      uses: actions/checkout@v3
+    - name: Checkout source
+      uses: actions/checkout@v4
 
     - name: Setup build environment
       run: |
@@ -37,64 +32,44 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         sudo apt-get clean
 
-    - name: Apply diy-part1.sh (feeds modification)
-      if: ${{ env.DIY_P1_SH != '' }}
-      run: |
-        chmod +x ${{ env.DIY_P1_SH }}
-        ./${{ env.DIY_P1_SH }}
-
-    - name: Update and install feeds
+    - name: Update & install feeds
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Apply diy-part2.sh (custom changes)
-      if: ${{ env.DIY_P2_SH != '' }}
+    - name: Apply .config
       run: |
-        chmod +x ${{ env.DIY_P2_SH }}
-        ./${{ env.DIY_P2_SH }}
+        cp "${{ env.CONFIG_FILE }}" .config
 
-    - name: Load .config from root
+    - name: Run DIY part 1 (before defconfig)
+      if: ${{ env.DIY_P1_SH != '' }}
       run: |
-        [ -f .config ] && echo "Using root .config"
+        chmod +x "${{ env.DIY_P1_SH }}"
+        ./"${{ env.DIY_P1_SH }}"
 
     - name: Run make defconfig
+      run: make defconfig
+
+    - name: Run DIY part 2 (after defconfig)
+      if: ${{ env.DIY_P2_SH != '' }}
       run: |
-        make defconfig
+        chmod +x "${{ env.DIY_P2_SH }}"
+        ./"${{ env.DIY_P2_SH }}"
 
     - name: Compile firmware
       run: |
-        make -j$(nproc) || make -j1 V=s
+        make -j$(nproc) V=s || make -j1 V=s
 
-    - name: Upload bin folder (all)
+    - name: Upload bin directory
       if: env.UPLOAD_BIN_DIR == 'true'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: lede-bin-${{ matrix.ARCHITECTURE }}
-        path: bin
+        name: openwrt-bin-h68k
+        path: bin/
 
-    - name: Upload firmware only
-      if: env.UPLOAD_FIRMWARE == 'true'
-      uses: actions/upload-artifact@v3
-      with:
-        name: firmware-${{ matrix.ARCHITECTURE }}
-        path: bin/targets/*/*
-
-    - name: Release firmware
-      if: env.UPLOAD_RELEASE == 'true'
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: firmware-${{ matrix.ARCHITECTURE }}-$(date +'%Y%m%d-%H%M')
-        name: H68K lede firmware
-        body: |
-          ✅ 自动编译完成
-          📅 日期: $(date +'%Y-%m-%d %H:%M')
-          💻 架构: ${{ matrix.ARCHITECTURE }}
-        files: bin/targets/*/*
-
-    - name: Cleanup old workflow runs
+    - name: Clean up old workflow runs
       uses: GitRML/delete-workflow-runs@main
       with:
         retain_days: 1
         keep_minimum_runs: 1
-        token: ${{ secrets.ACCESS_TOKEN }}
+        token: ${{ env.GITHUB_TOKEN }}
