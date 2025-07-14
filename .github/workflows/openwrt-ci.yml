@@ -62,21 +62,6 @@ jobs:
           echo "配置文件不存在，使用默认config"
         fi
 
-    - name: Run diy-part1.sh (if exists)
-      if: ${{ env.DIY_P1_SH != '' && (hashFiles(env.DIY_P1_SH) != '') }}
-      run: |
-        chmod +x $DIY_P1_SH
-        ./$DIY_P1_SH
-
-    - name: Prepare config
-      run: make defconfig
-
-    - name: Run diy-part2.sh (if exists)
-      if: ${{ env.DIY_P2_SH != '' && (hashFiles(env.DIY_P2_SH) != '') }}
-      run: |
-        chmod +x $DIY_P2_SH
-        ./$DIY_P2_SH
-
     - name: Build firmware
       run: |
         make -j$(nproc) V=s || make -j1 V=s
