@@ -27,7 +27,7 @@ echo "src-git argon https://github.com/jerrykuku/luci-theme-argon" >> feeds.conf
 echo "src-git design https://github.com/gngpp/luci-theme-design" >> feeds.conf.default
 
 # 修改默认 IP 地址
-echo "修改默认 IP 地址为 192.168.1.1..."
+echo "修改默认 IP 地址为 192.168.123.1..."
 sed -i 's/192.168.1.1/192.168.123.1/g' package/base-files/files/bin/config_generate
 
 # 修改默认主机名
