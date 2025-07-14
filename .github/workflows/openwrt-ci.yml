@@ -1,7 +1,7 @@
-name: Build lede Firmware for H68K
+name: Build lede Firmware for H68K with Debug
 
 on:
-  workflow_dispatch:    # 手动触发
+  workflow_dispatch:
   schedule:
     - cron: '0 16 * * *'   # 每天北京时间 0 点触发
 
@@ -32,29 +32,42 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         sudo apt-get clean
 
-    - name: Update & install feeds
+    - name: Check root directory files
       run: |
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+        echo "根目录文件列表："
+        ls -alh
+
+    - name: Check .config existence and content
+      run: |
+        if [ -f "${{ env.CONFIG_FILE }}" ]; then
+          echo ".config 文件存在，显示前20行："
+          head -20 "${{ env.CONFIG_FILE }}"
+        else
+          echo "Error: .config 文件不存在！"
+          exit 1
+        fi
 
     - name: Apply .config
       run: |
         cp "${{ env.CONFIG_FILE }}" .config
+        echo "已复制 .config，显示复制后文件前20行："
+        head -20 .config
 
-    - name: Run DIY part 1 (before defconfig)
-      if: ${{ env.DIY_P1_SH != '' }}
-      run: |
-        chmod +x "${{ env.DIY_P1_SH }}"
-        ./"${{ env.DIY_P1_SH }}"
+    # 暂时注释 DIY 脚本，避免影响测试
+    # - name: Run DIY part 1 (before defconfig)
+    #   if: ${{ env.DIY_P1_SH != '' }}
+    #   run: |
+    #     chmod +x "${{ env.DIY_P1_SH }}"
+    #     ./"${{ env.DIY_P1_SH }}"
 
     - name: Run make defconfig
       run: make defconfig
 
-    - name: Run DIY part 2 (after defconfig)
-      if: ${{ env.DIY_P2_SH != '' }}
-      run: |
-        chmod +x "${{ env.DIY_P2_SH }}"
-        ./"${{ env.DIY_P2_SH }}"
+    # - name: Run DIY part 2 (after defconfig)
+    #   if: ${{ env.DIY_P2_SH != '' }}
+    #   run: |
+    #     chmod +x "${{ env.DIY_P2_SH }}"
+    #     ./"${{ env.DIY_P2_SH }}"
 
     - name: Compile firmware
       run: |
