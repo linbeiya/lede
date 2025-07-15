@@ -1,0 +1,45 @@
+# H68K 最小化配置 - 用于 GitHub Actions 编译
+# 减少包大小以避免磁盘空间不足
+
+# Target Config for H68K (ARM64)
+CONFIG_TARGET_armsr=y
+CONFIG_TARGET_armsr_armv8=y
+CONFIG_TARGET_armsr_armv8_DEVICE_generic=y
+
+# Filesystem & Firmware Format
+CONFIG_TARGET_IMAGES_GZIP=y
+CONFIG_TARGET_ROOTFS_EXT4FS=y
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
+
+# 基础驱动支持
+CONFIG_PACKAGE_kmod-usb3=y
+CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-r8169=y
+CONFIG_PACKAGE_kmod-fs-ext4=y
+
+# MT7921 WiFi 驱动（核心）
+CONFIG_PACKAGE_kmod-mt76=y
+CONFIG_PACKAGE_kmod-mt76-core=y
+CONFIG_PACKAGE_kmod-mt7921e=y
+CONFIG_PACKAGE_wireless-tools=y
+CONFIG_PACKAGE_iw=y
+CONFIG_PACKAGE_wpad-basic-mbedtls=y
+
+# 基础系统
+CONFIG_PACKAGE_bash=y
+CONFIG_PACKAGE_htop=y
+
+# LuCI 基础支持
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-theme-argon=y
+CONFIG_PACKAGE_luci-app-firewall=y
+
+# OpenClash（核心功能）
+CONFIG_PACKAGE_luci-app-openclash=y
+
+# Docker 支持（可选，占用空间较大）
+# CONFIG_PACKAGE_luci-app-docker=y
+# CONFIG_PACKAGE_docker-ce=y
+
+# 网络加速
+CONFIG_PACKAGE_luci-app-turboacc=y
