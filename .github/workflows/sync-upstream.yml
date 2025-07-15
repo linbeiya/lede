@@ -1,0 +1,129 @@
+name: Sync with Upstream LEDE and Auto Build H68K
+
+on:
+  workflow_dispatch:    # 手动触发
+  schedule:
+    - cron: '0 2 * * *'   # 每天北京时间10点（UTC2点）自动检查更新
+
+env:
+  UPSTREAM_REPO: coolsnowwolf/lede
+  UPSTREAM_BRANCH: master
+  TARGET_BRANCH: master
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-22.04
+    outputs:
+      has-update: ${{ steps.sync.outputs.has-update }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Configure Git
+      run: |
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+
+    - name: Sync with upstream
+      id: sync
+      run: |
+        echo "🔍 检查上游 LEDE 源码更新..."
+        
+        # 添加上游仓库
+        git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git
+        git fetch upstream ${{ env.UPSTREAM_BRANCH }}
+        
+        # 获取提交信息
+        UPSTREAM_COMMIT=$(git rev-parse upstream/${{ env.UPSTREAM_BRANCH }})
+        CURRENT_COMMIT=$(git rev-parse HEAD)
+        
+        echo "上游最新提交: $UPSTREAM_COMMIT"
+        echo "当前提交: $CURRENT_COMMIT"
+        
+        if [ "$UPSTREAM_COMMIT" = "$CURRENT_COMMIT" ]; then
+          echo "✅ 已是最新版本，无需更新"
+          echo "has-update=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        echo "🔄 发现上游更新，开始同步..."
+        echo "has-update=true" >> $GITHUB_OUTPUT
+        
+        # 备份 H68K 配置文件
+        echo "📦 备份 H68K 配置文件..."
+        mkdir -p .h68k-backup
+        cp .config .h68k-backup/ 2>/dev/null || echo "⚠️ .config 不存在"
+        cp .config.minimal .h68k-backup/ 2>/dev/null || echo "⚠️ .config.minimal 不存在"
+        cp diy-part*.sh .h68k-backup/ 2>/dev/null || echo "⚠️ diy-part*.sh 不存在"
+        cp H68K-README.md .h68k-backup/ 2>/dev/null || echo "⚠️ H68K-README.md 不存在"
+        cp monitor-disk-space.sh .h68k-backup/ 2>/dev/null || echo "⚠️ monitor-disk-space.sh 不存在"
+        cp -r .github .h68k-backup/ 2>/dev/null || echo "⚠️ .github 目录不存在"
+        
+        # 获取更新日志
+        echo "📝 生成更新日志..."
+        echo "# 🔄 LEDE 源码自动更新日志" > UPDATE_LOG.md
+        echo "" >> UPDATE_LOG.md
+        echo "**更新时间**: $(date '+%Y-%m-%d %H:%M:%S')" >> UPDATE_LOG.md
+        echo "**上游仓库**: https://github.com/${{ env.UPSTREAM_REPO }}" >> UPDATE_LOG.md
+        echo "**更新提交**: $UPSTREAM_COMMIT" >> UPDATE_LOG.md
+        echo "" >> UPDATE_LOG.md
+        echo "## 📋 更新内容" >> UPDATE_LOG.md
+        git log --oneline --no-merges $CURRENT_COMMIT..$UPSTREAM_COMMIT | head -20 >> UPDATE_LOG.md
+        
+        # 尝试合并上游更新
+        echo "🔀 合并上游更新..."
+        if git merge upstream/${{ env.UPSTREAM_BRANCH }} --no-edit; then
+          echo "✅ 自动合并成功"
+        else
+          echo "⚠️ 自动合并失败，使用强制更新策略"
+          git merge --abort
+          git reset --hard upstream/${{ env.UPSTREAM_BRANCH }}
+        fi
+        
+        # 恢复 H68K 配置文件
+        echo "🔧 恢复 H68K 配置文件..."
+        cp .h68k-backup/.config . 2>/dev/null || echo "⚠️ 恢复 .config 失败"
+        cp .h68k-backup/.config.minimal . 2>/dev/null || echo "⚠️ 恢复 .config.minimal 失败"
+        cp .h68k-backup/diy-part*.sh . 2>/dev/null || echo "⚠️ 恢复 diy-part*.sh 失败"
+        cp .h68k-backup/H68K-README.md . 2>/dev/null || echo "⚠️ 恢复 H68K-README.md 失败"
+        cp .h68k-backup/monitor-disk-space.sh . 2>/dev/null || echo "⚠️ 恢复 monitor-disk-space.sh 失败"
+        cp -r .h68k-backup/.github . 2>/dev/null || echo "⚠️ 恢复 .github 失败"
+        
+        # 清理备份
+        rm -rf .h68k-backup
+        
+        # 提交更新
+        git add .
+        git commit -m "Auto sync upstream LEDE - $(date '+%Y-%m-%d %H:%M:%S')" || echo "没有需要提交的更改"
+
+        # 推送更新
+        git push origin ${{ env.TARGET_BRANCH }}
+
+        echo "✅ 同步完成！"
+
+  trigger-build:
+    needs: sync-upstream
+    if: needs.sync-upstream.outputs.has-update == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Trigger H68K build workflow
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          console.log('触发 H68K 固件编译...');
+
+          const result = await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'openwrt-ci.yml',
+            ref: '${{ env.TARGET_BRANCH }}'
+          });
+
+          console.log('H68K 编译任务已触发');

@@ -1,32 +1,52 @@
-name: Build lede Firmware for H68K
+name: Build H68K Firmware
 
 on:
   workflow_dispatch:    # 手动触发
-  schedule:
-    - cron: '0 16 * * *'   # 每天北京时间0点（UTC16点）自动触发
+  push:
+    paths:
+      - '.config'
+      - 'diy-part*.sh'
+      - '.github/workflows/openwrt-ci.yml'
 
 env:
-  REPO_URL: https://github.com/linbeiya/lede.git
   REPO_BRANCH: master
-  CONFIG_FILE: .config
+  CONFIG_FILE: .config.minimal  # 使用最小化配置避免空间不足
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   TZ: Asia/Shanghai
-  UPLOAD_BIN_DIR: true
+  UPLOAD_BIN_DIR: false  # 不上传 bin 目录以节省空间
   UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
-  GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+  UPLOAD_RELEASE: false  # 不创建 release 以节省空间
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout source
-      uses: actions/checkout@v4
+    - name: Maximize build space
+      uses: easimon/maximize-build-space@master
       with:
-        repository: linbeiya/lede
-        ref: ${{ env.REPO_BRANCH }}
+        root-reserve-mb: 512
+        swap-size-mb: 1024
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        remove-codeql: 'true'
+        remove-docker-images: 'true'
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Free up disk space
+      run: |
+        echo "清理系统空间..."
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+        df -h
 
     - name: Setup build environment
       run: |
@@ -81,35 +101,63 @@ jobs:
         
     - name: Download dependencies
       run: |
+        echo "开始下载编译依赖..."
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
+        echo "清理下载缓存..."
+        rm -rf $(find dl -name "*.tmp" -o -name "*.part")
+        df -h
 
     - name: Compile firmware
       run: |
         echo "开始编译 H68K 固件..."
         echo "编译开始时间: $(date)"
-        make -j$(nproc) V=s || make -j1 V=s
-        echo "编译结束时间: $(date)"
+        echo "可用磁盘空间:"
+        df -h
 
-    - name: Check compile result
+        # 使用较少的并行任务以节省内存和磁盘空间
+        make -j2 V=s || make -j1 V=s
+
+        echo "编译结束时间: $(date)"
+        echo "编译后磁盘使用情况:"
+        df -h
+
+    - name: Check compile result and cleanup
       run: |
         echo "检查编译结果..."
         ls -la bin/targets/*/
         if [ -d "bin/targets/armsr/armv8" ]; then
           echo "H68K 固件编译成功！"
           ls -la bin/targets/armsr/armv8/
+
+          # 清理不必要的文件以节省空间
+          echo "清理编译临时文件..."
+          rm -rf build_dir/host
+          rm -rf build_dir/toolchain-*
+          rm -rf staging_dir/host
+          rm -rf tmp
+          find bin/targets/armsr/armv8/ -name "*.buildinfo" -delete
+          find bin/targets/armsr/armv8/ -name "*.manifest" -delete
+
+          echo "清理后的固件文件："
+          ls -la bin/targets/armsr/armv8/
         else
           echo "编译失败，检查目录结构："
           find bin/targets/ -name "*.img*" -o -name "*.bin" -o -name "*.gz" | head -10
         fi
 
-    - name: Upload bin directory
-      if: env.UPLOAD_BIN_DIR == 'true'
+        echo "最终磁盘使用情况："
+        df -h
+
+    - name: Upload firmware only
       uses: actions/upload-artifact@v4
       with:
-        name: openwrt-bin-h68k
-        path: bin/
+        name: H68K-OpenWrt-Firmware
+        path: |
+          bin/targets/armsr/armv8/*.img.gz
+          bin/targets/armsr/armv8/*.bin
+        retention-days: 7
 
     - name: Clean up old workflow runs
       uses: GitRML/delete-workflow-runs@main
